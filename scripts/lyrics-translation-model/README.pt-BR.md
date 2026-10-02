@@ -1,3 +1,5 @@
+<p align="right"><a href="README.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Modelo offline de tradução de letras — inglês ↔ persa
 
 O framework Translation da Apple não oferece suporte a persa (#48). Este modelo adiciona os dois sentidos inglês ↔ persa e funciona inteiramente no dispositivo depois do download, sem rede e sem chave de API.
