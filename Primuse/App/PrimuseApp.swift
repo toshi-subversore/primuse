@@ -1652,12 +1652,11 @@ struct PrimuseApp: App {
             guard let existing else {
                 throw CocoaError(.fileNoSuchFile)
             }
-            if existing.basePath != LocalImportService.musicDirectory.path {
-                try sourcesStore.updateDurably(existing.id) {
-                    $0.basePath = LocalImportService.musicDirectory.path
-                }
-            }
-            return sourcesStore.source(id: existing.id) ?? existing
+            // Opening a document must not turn a disabled source back on or
+            // manufacture a user-facing source edit. The established pending
+            // scan recovery path repairs a stale managed basePath when the
+            // source is enabled; direct playback below uses the managed URL.
+            return existing
         }
     }
 
@@ -1677,11 +1676,14 @@ struct PrimuseApp: App {
             cleanupPickedCopies: false
         )
         var finalResult: LocalImportService.CopyResult?
-        for await event in session.events {
-            if case .finished(let result) = event {
-                finalResult = result
+        await withTaskCancellationHandler {
+            for await event in session.events {
+                if case .finished(let result) = event {
+                    finalResult = result
+                }
             }
-            if Task.isCancelled { session.cancel() }
+        } onCancel: {
+            session.cancel()
         }
 
         guard !Task.isCancelled,
@@ -1773,7 +1775,8 @@ struct PrimuseApp: App {
             from: managedURL,
             shouldRecordPlaybackStart: true
         )
-        guard externalAudioOpenRequestState.isCurrent(requestID) else { return }
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
 
         NotificationCenter.default.post(
             name: .primuseRequestShowNowPlaying,
