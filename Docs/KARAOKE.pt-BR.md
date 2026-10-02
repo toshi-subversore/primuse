@@ -1,3 +1,5 @@
+<p align="right"><a href="KARAOKE.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Karaokê entre dispositivos
 
 Atualizado em 26/09/2026. Este documento distingue a implementação existente no workspace principal daquilo que já foi publicado. Alterações ainda não enviadas ou não publicadas não devem ser tratadas como recursos já disponíveis aos usuários.
