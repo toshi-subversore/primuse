@@ -1,3 +1,5 @@
+<p align="right"><a href="README.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Sistema de ícones do Primuse
 
 O catálogo de produção contém um ícone principal e seis alternativos:
