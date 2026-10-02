@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="KARAOKE.pt-BR.md">Português (Brasil)</a></p>
+
 # 卡拉OK跨端功能
 
 更新日期：2026-09-26。以下区分主工作区实现与已发布版本；未提交、未发布的修改不能视为用户已经收到。
