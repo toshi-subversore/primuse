@@ -1618,7 +1618,24 @@ struct PrimuseApp: App {
             source = created
         }
 
-        _ = scanService.scanSource(
+        let resolvedNames = Set(
+            result.resolvedRelativePaths.map {
+                URL(fileURLWithPath: $0).lastPathComponent
+            }
+        )
+
+        func resolvedSong() -> Song? {
+            let songs = musicLibrary.musicSongs + musicLibrary.spokenWordSongs
+            return songs.first(where: {
+                $0.sourceID == source.id
+                    && resolvedNames.contains(($0.filePath as NSString).lastPathComponent)
+            })
+        }
+
+        // If another scan is already running, scanSource can decline to start a
+        // second one. Wait for it, then retry once so a file committed after the
+        // first scan enumerated the directory is not missed.
+        var started = scanService.scanSource(
             source,
             sourceManager: sourceManager,
             library: musicLibrary,
@@ -1626,17 +1643,23 @@ struct PrimuseApp: App {
             scraperService: scraperService
         )
         await scanService.waitForActiveScansToComplete()
+        await musicLibrary.waitForPendingIndex()
 
-        let resolvedNames = Set(
-            result.resolvedRelativePaths.map {
-                URL(fileURLWithPath: $0).lastPathComponent
+        if resolvedSong() == nil, !started {
+            started = scanService.scanSource(
+                source,
+                sourceManager: sourceManager,
+                library: musicLibrary,
+                sourceStore: sourcesStore,
+                scraperService: scraperService
+            )
+            if started {
+                await scanService.waitForActiveScansToComplete()
+                await musicLibrary.waitForPendingIndex()
             }
-        )
-        let songs = musicLibrary.musicSongs + musicLibrary.spokenWordSongs
-        guard let song = songs.first(where: {
-            $0.sourceID == source.id
-                && resolvedNames.contains(($0.filePath as NSString).lastPathComponent)
-        }) else {
+        }
+
+        guard let song = resolvedSong() else {
             plog("⚠️ OpenWith: imported track not found after scan — \(url.lastPathComponent)")
             return
         }
