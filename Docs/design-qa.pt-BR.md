@@ -1,3 +1,5 @@
+<p align="right"><a href="design-qa.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Validação de design da página de compartilhamento
 
 ## Referência de design
