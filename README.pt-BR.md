@@ -20,7 +20,9 @@ A versão estável está disponível na App Store. Pesquise por “Primuse” ou
 ## Documentação
 
 - [中文说明](README.md) · [English README](README.en.md) · [README em Português (Brasil)](README.pt-BR.md)
+- [Índice da documentação em Português (Brasil)](Docs/README.pt-BR.md)
 - [中文更新日志](Docs/CHANGELOG.md) · [English Changelog](Docs/CHANGELOG.en.md)
+- [Karaokê](Docs/KARAOKE.pt-BR.md) · [Share Relay](ShareRelay/DEPLOYMENT.pt-BR.md) · [QA de design](Docs/design-qa.pt-BR.md) · [Auditoria macOS](Docs/MacDesignAudit.pt-BR.md)
 - [Capturas de tela](#capturas-de-tela) · [Aplicativo para macOS](#aplicativo-para-macos) · [Aplicativo para Apple TV](#aplicativo-para-apple-tv) · [Apple Watch e integração com o sistema](#apple-watch-e-integração-com-o-sistema)
 - [Fontes de música](#fontes-de-música) · [Rádio, descoberta e personalização](#rádio-descoberta-e-personalização) · [Reprodução e formatos](#reprodução-e-formatos) · [Letras e metadados](#letras-e-metadados) · [Biblioteca e sincronização](#biblioteca-e-sincronização)
 - [Primeiros passos](#primeiros-passos) · [Fontes personalizadas de scraping](#fontes-personalizadas-de-scraping) · [Estrutura do projeto](#estrutura-do-projeto) · [Arquitetura](#arquitetura)
