@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 # 离线歌词翻译模型（英语 ↔ 波斯语）
 
 Apple 翻译框架不支持波斯语（#48）。这里的模型补上英语 ↔ 波斯语两个方向，下载后在本机翻译，不联网、不需要 API Key。
