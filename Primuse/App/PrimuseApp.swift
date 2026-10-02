@@ -1773,7 +1773,9 @@ struct PrimuseApp: App {
                 // before DLNA/casting, which resolves the Song again through
                 // SourceManager instead of consuming the direct managed URL.
                 // Deliberately preserve isEnabled and every other user setting.
-                try sourcesStore.updateDurably(existing.id) {
+                // The sandbox UUID is device-local derived state, not a
+                // user edit. Repair it without bumping modifiedAt/CloudKit.
+                sourcesStore.updateLocal(existing.id) {
                     $0.basePath = repaired.basePath
                 }
                 // SourceManager caches connectors. Updating the store alone is
