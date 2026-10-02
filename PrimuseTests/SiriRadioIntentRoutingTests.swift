@@ -167,6 +167,68 @@ final class ExternalAudioOpenTests: XCTestCase {
         )
     }
 
+    func testManagedSourceRepairFixesStalePathWithoutEnablingSource() {
+        let source = MusicSource(
+            id: "managed-local",
+            name: "Local Music",
+            type: .local,
+            basePath: "/old/container/Documents/LocalMusic",
+            isEnabled: false
+        )
+
+        let repaired = ExternalAudioDocumentPolicy.repairedManagedSource(source)
+
+        XCTAssertEqual(repaired.basePath, LocalImportService.musicDirectory.path)
+        XCTAssertFalse(repaired.isEnabled)
+        XCTAssertFalse(repaired.isDeleted)
+    }
+
+    func testImportFailureProducesUserVisibleAlert() throws {
+        var result = LocalImportService.CopyResult()
+        result.discovered = 1
+        result.failed = 1
+        result.failures = [
+            LocalImportService.CopyFailure(
+                fileName: "broken.flac",
+                reason: .invalidAudioFile,
+                detail: "decoder rejected the file"
+            )
+        ]
+
+        let alert = try XCTUnwrap(
+            ExternalAudioDocumentPolicy.importFailureAlert(for: result)
+        )
+
+        XCTAssertFalse(alert.title.isEmpty)
+        XCTAssertTrue(alert.message.contains("broken.flac"))
+        XCTAssertTrue(alert.message.contains(
+            String(localized: "local_import_reason_invalid_audio")
+        ))
+    }
+
+    func testSuccessfulOrCancelledImportDoesNotProduceFailureAlert() {
+        var successful = LocalImportService.CopyResult()
+        successful.copied = 1
+        successful.resolvedManagedFileNames = ["track.flac"]
+        XCTAssertNil(
+            ExternalAudioDocumentPolicy.importFailureAlert(for: successful)
+        )
+
+        var cancelled = LocalImportService.CopyResult()
+        cancelled.cancelled = true
+        cancelled.failed = 1
+        cancelled.failures = [
+            LocalImportService.CopyFailure(
+                fileName: "track.flac",
+                reason: .copyFailed,
+                detail: nil
+            )
+        ]
+        XCTAssertNil(
+            ExternalAudioDocumentPolicy.importFailureAlert(for: cancelled)
+        )
+    }
+
     func testNewestOpenRequestSupersedesEarlierRequest() {
         var state = ExternalAudioOpenRequestState()
 
