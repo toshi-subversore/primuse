@@ -1379,6 +1379,95 @@ enum ExternalAudioDocumentPolicy {
         guard exists else { return .create }
         return isDeleted ? .restore : .reuse
     }
+
+    static func repairedManagedSource(_ source: MusicSource) -> MusicSource {
+        var repaired = source
+        repaired.basePath = LocalImportService.musicDirectory.path
+        return repaired
+    }
+
+    static func importFailureAlert(
+        for result: LocalImportService.CopyResult
+    ) -> ExternalAudioOpenAlert? {
+        guard !result.cancelled,
+              result.resolvedManagedFileNames.isEmpty else {
+            return nil
+        }
+
+        let title: String
+        if result.failures.contains(where: { $0.reason == .providerReturnedError }) {
+            title = String(localized: "local_import_provider_error_title")
+        } else if result.failures.contains(where: {
+            switch $0.reason {
+            case .coordinatedReadFailed, .invalidAudioFile, .providerReturnedError:
+                return true
+            default:
+                return false
+            }
+        }) {
+            title = String(localized: "local_import_provider_title")
+        } else {
+            title = String(localized: "local_import_err_title")
+        }
+
+        let attempted = max(result.discovered, result.skipped)
+        var message = String(
+            format: String(localized: "local_import_none_added_message_format"),
+            attempted,
+            result.skipped
+        )
+        if let failure = result.failures.first {
+            var reason: String
+            switch failure.reason {
+            case .unsupportedFormat:
+                reason = String(localized: "local_import_reason_unsupported")
+            case .notFound:
+                reason = String(localized: "local_import_reason_not_found")
+            case .permissionDenied:
+                reason = String(localized: "local_import_reason_permission")
+            case .notEnoughSpace:
+                reason = String(localized: "local_import_reason_space")
+            case .coordinatedReadFailed:
+                reason = String(localized: "local_import_reason_provider")
+            case .invalidAudioFile:
+                reason = String(localized: "local_import_reason_invalid_audio")
+            case .providerReturnedError:
+                reason = String(localized: "local_import_reason_provider_error")
+            case .databaseFailed:
+                reason = String(localized: "local_import_reason_database")
+            case .copyFailed:
+                reason = String(localized: "local_import_reason_copy")
+            }
+            if (failure.reason == .invalidAudioFile
+                || failure.reason == .providerReturnedError),
+               let detail = failure.detail,
+               !detail.isEmpty {
+                reason += " (\(detail))"
+            }
+            let description = String(
+                format: String(localized: "local_import_failure_item_format"),
+                failure.fileName,
+                reason
+            )
+            message += "\n" + String(
+                format: String(localized: "local_import_failure_reason_format"),
+                description
+            )
+            switch failure.reason {
+            case .coordinatedReadFailed, .invalidAudioFile, .providerReturnedError:
+                message += "\n" + String(localized: "local_import_provider_hint")
+            default:
+                break
+            }
+        }
+        return ExternalAudioOpenAlert(title: title, message: message)
+    }
+}
+
+struct ExternalAudioOpenAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
 
 struct ExternalAudioOpenRequestState {
@@ -1461,6 +1550,7 @@ struct PrimuseApp: App {
     #if os(iOS)
     @State private var externalAudioOpenRequestState = ExternalAudioOpenRequestState()
     @State private var externalAudioOpenTask: Task<Void, Never>?
+    @State private var externalAudioOpenAlert: ExternalAudioOpenAlert?
     #endif
 
     init() {
@@ -1600,6 +1690,13 @@ struct PrimuseApp: App {
             .preferredColorScheme(iOSAppearance.colorScheme)
             .modifier(IOSWindowAppearanceModifier(preference: iOSAppearance))
             .modifier(ExternalDisplaySceneAccessoryModifier())
+            .alert(item: $externalAudioOpenAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("ok"))
+                )
+            }
     }
     #else
     @ViewBuilder private var macPlatformRootContent: some View {
@@ -1666,10 +1763,17 @@ struct PrimuseApp: App {
             guard let existing else {
                 throw CocoaError(.fileNoSuchFile)
             }
-            // Opening a document must not turn a disabled source back on or
-            // manufacture a user-facing source edit. The established pending
-            // scan recovery path repairs a stale managed basePath when the
-            // source is enabled; direct playback below uses the managed URL.
+            let repaired = ExternalAudioDocumentPolicy.repairedManagedSource(existing)
+            if repaired.basePath != existing.basePath {
+                // Repair the sandbox UUID before playback. This is required
+                // before DLNA/casting, which resolves the Song again through
+                // SourceManager instead of consuming the direct managed URL.
+                // Deliberately preserve isEnabled and every other user setting.
+                try sourcesStore.updateDurably(existing.id) {
+                    $0.basePath = repaired.basePath
+                }
+                return sourcesStore.source(id: existing.id) ?? repaired
+            }
             return existing
         }
     }
@@ -1703,12 +1807,21 @@ struct PrimuseApp: App {
         guard !Task.isCancelled,
               externalAudioOpenRequestState.isCurrent(requestID),
               let result = finalResult,
-              !result.cancelled,
-              let managedName = result.resolvedManagedFileNames.last,
+              !result.cancelled else {
+            return
+        }
+
+        guard let managedName = result.resolvedManagedFileNames.last,
               let managedURL = ExternalAudioDocumentPolicy.managedFileURL(
                   fileName: managedName
               ),
               ExternalAudioDocumentPolicy.isSafeManagedFile(managedURL) else {
+            externalAudioOpenAlert =
+                ExternalAudioDocumentPolicy.importFailureAlert(for: result)
+                ?? ExternalAudioOpenAlert(
+                    title: String(localized: "local_import_err_title"),
+                    message: String(localized: "local_import_reason_copy")
+                )
             return
         }
 
