@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 # Primuse app icon system
 
 The production catalog contains one primary icon and six alternates:

@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="MacDesignAudit.pt-BR.md">Português (Brasil)</a></p>
+
 # Primuse macOS Design Audit
 
 Source of truth: `design/猿音/main.jsx` and `design/猿音/scenes/*.jsx`.
