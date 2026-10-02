@@ -229,6 +229,17 @@ final class ExternalAudioOpenTests: XCTestCase {
         )
     }
 
+    func testSourcePersistenceFailureProducesUserVisibleAlert() {
+        let alert = ExternalAudioDocumentPolicy.sourcePersistenceFailureAlert()
+
+        XCTAssertFalse(alert.title.isEmpty)
+        XCTAssertTrue(
+            alert.message.contains(
+                String(localized: "local_import_reason_database")
+            )
+        )
+    }
+
     func testNewestOpenRequestSupersedesEarlierRequest() {
         var state = ExternalAudioOpenRequestState()
 
