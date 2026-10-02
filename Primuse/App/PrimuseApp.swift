@@ -1571,7 +1571,8 @@ struct PrimuseApp: App {
     /// one-shot document access.
     @MainActor
     private func openExternalAudioDocument(_ url: URL) async {
-        guard ExternalAudioDocumentPolicy.canOpen(url) else {
+        let fileExtension = url.pathExtension.lowercased()
+        guard PrimuseConstants.supportedAudioExtensions.contains(fileExtension) else {
             plog("⚠️ OpenWith: unsupported audio document \(url.lastPathComponent)")
             return
         }
