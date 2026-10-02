@@ -1,3 +1,5 @@
+<p align="right"><a href="README.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Runtime de áudio com FFmpeg
 
 O Primuse usa as bibliotecas dinâmicas do FFmpeg `libavformat`, `libavcodec`, `libavutil` e `libswresample` como caminho de fallback para decodificação de formatos amplos.
