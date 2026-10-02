@@ -1,3 +1,5 @@
+<p align="right"><a href="README.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Modelo de voz por IA para o modo Karaokê
 
 A separação de vocais do modo Karaokê usa o Hybrid Transformer Demucs v4 da Meta, sob licença MIT; consulte `LICENSE-demucs.txt`.
