@@ -111,6 +111,41 @@ final class ExternalAudioOpenTests: XCTestCase {
         XCTAssertEqual(safe?.lastPathComponent, "track.flac")
     }
 
+    func testManagedSourceDispositionPreservesDisabledSources() {
+        XCTAssertEqual(
+            ExternalAudioDocumentPolicy.managedSourceDisposition(
+                exists: true,
+                isDeleted: false,
+                isEnabled: false
+            ),
+            .reuse
+        )
+        XCTAssertEqual(
+            ExternalAudioDocumentPolicy.managedSourceDisposition(
+                exists: true,
+                isDeleted: false,
+                isEnabled: true
+            ),
+            .reuse
+        )
+        XCTAssertEqual(
+            ExternalAudioDocumentPolicy.managedSourceDisposition(
+                exists: true,
+                isDeleted: true,
+                isEnabled: false
+            ),
+            .restore
+        )
+        XCTAssertEqual(
+            ExternalAudioDocumentPolicy.managedSourceDisposition(
+                exists: false,
+                isDeleted: false,
+                isEnabled: false
+            ),
+            .create
+        )
+    }
+
     func testNewestOpenRequestSupersedesEarlierRequest() {
         var state = ExternalAudioOpenRequestState()
 
