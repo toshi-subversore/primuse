@@ -1356,6 +1356,20 @@ enum ExternalAudioDocumentPolicy {
         return "/" + candidate.lastPathComponent
     }
 
+    static func isSafeManagedFile(_ url: URL) -> Bool {
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root,
+              let values = try? candidate.resourceValues(
+                  forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+              ),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true else {
+            return false
+        }
+        return true
+    }
+
     static func managedSourceDisposition(
         exists: Bool,
         isDeleted: Bool,
@@ -1694,7 +1708,7 @@ struct PrimuseApp: App {
               let managedURL = ExternalAudioDocumentPolicy.managedFileURL(
                   fileName: managedName
               ),
-              FileManager.default.fileExists(atPath: managedURL.path) else {
+              ExternalAudioDocumentPolicy.isSafeManagedFile(managedURL) else {
             return
         }
 
