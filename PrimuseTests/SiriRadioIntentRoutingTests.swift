@@ -111,6 +111,27 @@ final class ExternalAudioOpenTests: XCTestCase {
         XCTAssertEqual(safe?.lastPathComponent, "track.flac")
     }
 
+    func testManagedPlaybackRejectsDirectoriesAndSymbolicLinks() throws {
+        let root = LocalImportService.ensureMusicDirectory()
+        let suffix = UUID().uuidString
+        let regular = root.appendingPathComponent("open-with-\(suffix).flac")
+        let directory = root.appendingPathComponent("open-with-dir-\(suffix)", isDirectory: true)
+        let symlink = root.appendingPathComponent("open-with-link-\(suffix).flac")
+        defer {
+            try? FileManager.default.removeItem(at: symlink)
+            try? FileManager.default.removeItem(at: regular)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try Data(repeating: 0, count: 2_048).write(to: regular)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: regular)
+
+        XCTAssertTrue(ExternalAudioDocumentPolicy.isSafeManagedFile(regular))
+        XCTAssertFalse(ExternalAudioDocumentPolicy.isSafeManagedFile(directory))
+        XCTAssertFalse(ExternalAudioDocumentPolicy.isSafeManagedFile(symlink))
+    }
+
     func testManagedSourceDispositionPreservesDisabledSources() {
         XCTAssertEqual(
             ExternalAudioDocumentPolicy.managedSourceDisposition(
