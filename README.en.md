@@ -1,4 +1,4 @@
-<p align="right"><a href="README.md">中文</a> · <strong>English</strong></p>
+<p align="right"><a href="README.md">中文</a> · <strong>English</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
 # Primuse
 
