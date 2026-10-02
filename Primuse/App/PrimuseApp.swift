@@ -1386,6 +1386,13 @@ enum ExternalAudioDocumentPolicy {
         return repaired
     }
 
+    static func sourcePersistenceFailureAlert() -> ExternalAudioOpenAlert {
+        ExternalAudioOpenAlert(
+            title: String(localized: "local_import_err_title"),
+            message: String(localized: "local_import_reason_database")
+        )
+    }
+
     static func importFailureAlert(
         for result: LocalImportService.CopyResult
     ) -> ExternalAudioOpenAlert? {
@@ -1840,6 +1847,8 @@ struct PrimuseApp: App {
             source = try await ensureManagedLocalSourceForExternalOpen()
         } catch {
             plog("⚠️ OpenWith: unable to persist managed source — \(error.localizedDescription)")
+            externalAudioOpenAlert =
+                ExternalAudioDocumentPolicy.sourcePersistenceFailureAlert()
             return
         }
 
