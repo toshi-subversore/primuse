@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 # 卡拉OK AI 人声模型
 
 卡拉OK模式的 AI 人声分离使用 Meta 的 Hybrid Transformer Demucs v4（MIT 许可，见 `LICENSE-demucs.txt`）。
