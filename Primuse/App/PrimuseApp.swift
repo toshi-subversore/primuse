@@ -1561,6 +1561,119 @@ struct PrimuseApp: App {
         )
     }
 
+    #if os(iOS)
+    /// Handles audio documents explicitly opened from the Files app.
+    ///
+    /// A document URL supplied by Files may be security-scoped and may point at
+    /// iCloud Drive or a third-party File Provider. LocalImportService already
+    /// coordinates/materializes those URLs off the main actor. Keeping a managed
+    /// local copy also makes the track playable after the provider revokes the
+    /// one-shot document access.
+    @MainActor
+    private func openExternalAudioDocument(_ url: URL) async {
+        let fileExtension = url.pathExtension.lowercased()
+        guard PrimuseConstants.supportedAudioExtensions.contains(fileExtension) else {
+            plog("⚠️ OpenWith: unsupported audio document \(url.lastPathComponent)")
+            return
+        }
+
+        await musicLibrary.whenReady()
+
+        let session = LocalImportService.copySession(
+            [url],
+            cleanupPickedCopies: false
+        )
+        var finalResult: LocalImportService.CopyResult?
+        for await event in session.events {
+            if case .finished(let result) = event {
+                finalResult = result
+            }
+        }
+
+        guard let result = finalResult,
+              !result.cancelled,
+              !result.resolvedRelativePaths.isEmpty else {
+            plog("⚠️ OpenWith: import failed for \(url.lastPathComponent)")
+            return
+        }
+
+        let source: MusicSource
+        if let sourceID = LocalImportService.existingSourceID,
+           let existing = sourcesStore.source(id: sourceID),
+           !existing.isDeleted {
+            if !existing.isEnabled {
+                sourcesStore.update(existing.id) { $0.isEnabled = true }
+            }
+            source = sourcesStore.source(id: existing.id) ?? existing
+        } else {
+            let created = LocalImportService.makeSource(
+                name: String(localized: "local_import_source_name")
+            )
+            do {
+                try sourcesStore.addDurably(created)
+            } catch {
+                plog("⚠️ OpenWith: could not create local source — \(error.localizedDescription)")
+                return
+            }
+            source = created
+        }
+
+        let resolvedNames = Set(
+            result.resolvedRelativePaths.map {
+                URL(fileURLWithPath: $0).lastPathComponent
+            }
+        )
+
+        func resolvedSong() -> Song? {
+            let songs = musicLibrary.musicSongs + musicLibrary.spokenWordSongs
+            return songs.first(where: {
+                $0.sourceID == source.id
+                    && resolvedNames.contains(($0.filePath as NSString).lastPathComponent)
+            })
+        }
+
+        // If another scan is already running, scanSource can decline to start a
+        // second one. Wait for it, then retry once so a file committed after the
+        // first scan enumerated the directory is not missed.
+        var started = scanService.scanSource(
+            source,
+            sourceManager: sourceManager,
+            library: musicLibrary,
+            sourceStore: sourcesStore,
+            scraperService: scraperService
+        )
+        await scanService.waitForActiveScansToComplete()
+        await musicLibrary.waitForPendingIndex()
+
+        if resolvedSong() == nil, !started {
+            started = scanService.scanSource(
+                source,
+                sourceManager: sourceManager,
+                library: musicLibrary,
+                sourceStore: sourcesStore,
+                scraperService: scraperService
+            )
+            if started {
+                await scanService.waitForActiveScansToComplete()
+                await musicLibrary.waitForPendingIndex()
+            }
+        }
+
+        guard let song = resolvedSong() else {
+            plog("⚠️ OpenWith: imported track not found after scan — \(url.lastPathComponent)")
+            return
+        }
+
+        playerService.shuffleEnabled = false
+        playerService.setQueue([song])
+        await playerService.play(song: song)
+        NotificationCenter.default.post(
+            name: .primuseRequestShowNowPlaying,
+            object: nil
+        )
+    }
+    #endif
+
     var body: some Scene {
         macAwareMainGroup {
             injectServices {
@@ -1819,6 +1932,15 @@ struct PrimuseApp: App {
                 }
                 .onOpenURL { url in
                     plog("🔗 onOpenURL: scheme=\(url.scheme ?? "?") host=\(url.host ?? "?")")
+                    #if os(iOS)
+                    // Files → Open With / Always Open With hands the selected
+                    // document to the app as a file URL. Import it into Primuse's
+                    // durable local source, rescan, then start that exact track.
+                    if url.isFileURL {
+                        Task { await openExternalAudioDocument(url) }
+                        return
+                    }
+                    #endif
                     if let request = MediaRelayImportRequest(url: url) {
                         mediaRelayImportRequest = request
                         return
