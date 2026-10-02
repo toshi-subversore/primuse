@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="DEPLOYMENT.pt-BR.md">Português (Brasil)</a></p>
+
 # Primuse Share Relay 部署指南
 
 本目录提供两种兼容 Primuse 媒体中继 API 的部署方式：
