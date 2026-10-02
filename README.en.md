@@ -1,4 +1,4 @@
-<p align="right"><a href="README.md">中文</a> · <strong>English</strong></p>
+<p align="right"><a href="README.md">中文</a> · <strong>English</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
 # Primuse
 
@@ -19,7 +19,7 @@ The stable release is available on the App Store. Search for “Primuse” or us
 
 ## Documentation
 
-- [中文说明](README.md) · [English README](README.en.md)
+- [中文说明](README.md) · [English README](README.en.md) · [Português (Brasil)](README.pt-BR.md)
 - [中文更新日志](Docs/CHANGELOG.md) · [English Changelog](Docs/CHANGELOG.en.md)
 - [Screenshots](#screenshots) · [macOS Desktop App](#macos-desktop-app) · [Apple TV App](#apple-tv-app) · [Apple Watch and System Integration](#apple-watch-and-system-integration)
 - [Music Sources](#music-sources) · [Radio, Discovery, and Personalization](#radio-discovery-and-personalization) · [Playback and Formats](#playback-and-formats) · [Lyrics and Metadata](#lyrics-and-metadata) · [Library and Sync](#library-and-sync)
