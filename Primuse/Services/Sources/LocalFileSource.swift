@@ -1263,6 +1263,13 @@ actor LocalFileSource: ExistingSongAwareScanningConnector, EmbeddedMetadataWrite
         return candidate
     }
 
+    /// Stable library identity for a local source-relative path. External
+    /// document playback uses the same ID before its background scan publishes
+    /// the row, so metadata replacement can seamlessly update Now Playing.
+    nonisolated static func songID(sourceID: String, path: String) -> String {
+        generateID(sourceID: sourceID, path: path)
+    }
+
     private nonisolated static func generateID(sourceID: String, path: String) -> String {
         let input = "\(sourceID):\(path)"
         let hash = SHA256.hash(data: Data(input.utf8))
