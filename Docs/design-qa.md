@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="design-qa.pt-BR.md">Português (Brasil)</a></p>
+
 # 分享页设计验收
 
 ## 设计基准
