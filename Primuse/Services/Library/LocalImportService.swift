@@ -249,6 +249,10 @@ enum LocalImportService {
         var discovered = 0
         var cancelled = false
         var failures: [CopyFailure] = []
+        /// Paths inside Documents/LocalMusic that resolve every successfully
+        /// handled input, including an already-imported duplicate. External
+        /// document opens use these paths to find the scanned Song and start it.
+        var resolvedRelativePaths: [String] = []
 
         var skipped: Int { duplicateSkipped + failed }
     }
@@ -347,6 +351,9 @@ enum LocalImportService {
             guard !pending.isEmpty else { return }
             do {
                 try identity.recordBatch(pending.map(\.identityEntry))
+                result.resolvedRelativePaths.append(
+                    contentsOf: pending.map { $0.audio.url.lastPathComponent }
+                )
                 result.copied += pending.count
             } catch {
                 for item in pending.reversed() {
@@ -614,10 +621,11 @@ enum LocalImportService {
             return
         }
 
-        if pending.contains(where: { $0.audio.sha256 == staged.sha256 }) {
+        if let duplicate = pending.first(where: { $0.audio.sha256 == staged.sha256 }) {
             transaction.discard(staged)
             processed += 1
             result.duplicateSkipped += 1
+            result.resolvedRelativePaths.append(duplicate.audio.url.lastPathComponent)
             progress?(progressSnapshot(
                 .committing,
                 fileName: fileName,
@@ -636,6 +644,7 @@ enum LocalImportService {
                     transaction.discard(staged)
                     processed += 1
                     result.duplicateSkipped += 1
+                    result.resolvedRelativePaths.append(existing.relativePath)
                     progress?(progressSnapshot(
                         .committing,
                         fileName: fileName,
