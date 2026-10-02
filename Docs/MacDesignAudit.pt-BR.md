@@ -1,3 +1,5 @@
+<p align="right"><a href="MacDesignAudit.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Auditoria de design do Primuse no macOS
 
 Fonte de verdade: `design/猿音/main.jsx` e `design/猿音/scenes/*.jsx`.
