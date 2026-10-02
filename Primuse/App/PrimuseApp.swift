@@ -1319,6 +1319,176 @@ private struct SourceAuthenticationPresentationModifier: ViewModifier {
     }
 }
 
+#if os(iOS)
+enum ExternalAudioDocumentPolicy {
+    enum ManagedSourceDisposition: Equatable {
+        case reuse
+        case restore
+        case create
+    }
+
+    static func canOpen(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        return PrimuseConstants.supportedAudioExtensions.contains(
+            url.pathExtension.lowercased()
+        )
+    }
+
+    static func managedFileURL(fileName: String) -> URL? {
+        guard !fileName.isEmpty,
+              fileName != ".",
+              fileName != "..",
+              !fileName.contains("/"),
+              !fileName.contains("\\"),
+              fileName.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = root.appendingPathComponent(fileName).standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root else { return nil }
+        return candidate
+    }
+
+    static func managedRelativePath(for url: URL) -> String {
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root else { return "" }
+        return "/" + candidate.lastPathComponent
+    }
+
+    static func isSafeManagedFile(_ url: URL) -> Bool {
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root,
+              let values = try? candidate.resourceValues(
+                  forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+              ),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true else {
+            return false
+        }
+        return true
+    }
+
+    static func managedSourceDisposition(
+        exists: Bool,
+        isDeleted: Bool,
+        isEnabled: Bool
+    ) -> ManagedSourceDisposition {
+        _ = isEnabled
+        guard exists else { return .create }
+        return isDeleted ? .restore : .reuse
+    }
+
+    static func repairedManagedSource(_ source: MusicSource) -> MusicSource {
+        var repaired = source
+        repaired.basePath = LocalImportService.musicDirectory.path
+        return repaired
+    }
+
+    static func importFailureAlert(
+        for result: LocalImportService.CopyResult
+    ) -> ExternalAudioOpenAlert? {
+        guard !result.cancelled,
+              result.resolvedManagedFileNames.isEmpty else {
+            return nil
+        }
+
+        let title: String
+        if result.failures.contains(where: { $0.reason == .providerReturnedError }) {
+            title = String(localized: "local_import_provider_error_title")
+        } else if result.failures.contains(where: {
+            switch $0.reason {
+            case .coordinatedReadFailed, .invalidAudioFile, .providerReturnedError:
+                return true
+            default:
+                return false
+            }
+        }) {
+            title = String(localized: "local_import_provider_title")
+        } else {
+            title = String(localized: "local_import_err_title")
+        }
+
+        let attempted = max(result.discovered, result.skipped)
+        var message = String(
+            format: String(localized: "local_import_none_added_message_format"),
+            attempted,
+            result.skipped
+        )
+        if let failure = result.failures.first {
+            var reason: String
+            switch failure.reason {
+            case .unsupportedFormat:
+                reason = String(localized: "local_import_reason_unsupported")
+            case .notFound:
+                reason = String(localized: "local_import_reason_not_found")
+            case .permissionDenied:
+                reason = String(localized: "local_import_reason_permission")
+            case .notEnoughSpace:
+                reason = String(localized: "local_import_reason_space")
+            case .coordinatedReadFailed:
+                reason = String(localized: "local_import_reason_provider")
+            case .invalidAudioFile:
+                reason = String(localized: "local_import_reason_invalid_audio")
+            case .providerReturnedError:
+                reason = String(localized: "local_import_reason_provider_error")
+            case .databaseFailed:
+                reason = String(localized: "local_import_reason_database")
+            case .copyFailed:
+                reason = String(localized: "local_import_reason_copy")
+            }
+            if (failure.reason == .invalidAudioFile
+                || failure.reason == .providerReturnedError),
+               let detail = failure.detail,
+               !detail.isEmpty {
+                reason += " (\(detail))"
+            }
+            let description = String(
+                format: String(localized: "local_import_failure_item_format"),
+                failure.fileName,
+                reason
+            )
+            message += "\n" + String(
+                format: String(localized: "local_import_failure_reason_format"),
+                description
+            )
+            switch failure.reason {
+            case .coordinatedReadFailed, .invalidAudioFile, .providerReturnedError:
+                message += "\n" + String(localized: "local_import_provider_hint")
+            default:
+                break
+            }
+        }
+        return ExternalAudioOpenAlert(title: title, message: message)
+    }
+}
+
+struct ExternalAudioOpenAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
+struct ExternalAudioOpenRequestState {
+    private var currentID: UUID?
+
+    mutating func begin() -> UUID {
+        let id = UUID()
+        currentID = id
+        return id
+    }
+
+    func isCurrent(_ id: UUID) -> Bool {
+        currentID == id
+    }
+
+    mutating func finish(_ id: UUID) {
+        if currentID == id { currentID = nil }
+    }
+}
+#endif
+
 @main
 struct PrimuseApp: App {
     #if os(iOS)
@@ -1377,6 +1547,11 @@ struct PrimuseApp: App {
     #endif
     /// 分享页签发的一次性导入凭证，仅在本地内存中保留。
     @State private var mediaRelayImportRequest: MediaRelayImportRequest?
+    #if os(iOS)
+    @State private var externalAudioOpenRequestState = ExternalAudioOpenRequestState()
+    @State private var externalAudioOpenTask: Task<Void, Never>?
+    @State private var externalAudioOpenAlert: ExternalAudioOpenAlert?
+    #endif
 
     init() {
         // 资料库分类有了默认收起的几类:升级前的显隐存档先在这里写实,界面读到的就是对的。
@@ -1515,6 +1690,13 @@ struct PrimuseApp: App {
             .preferredColorScheme(iOSAppearance.colorScheme)
             .modifier(IOSWindowAppearanceModifier(preference: iOSAppearance))
             .modifier(ExternalDisplaySceneAccessoryModifier())
+            .alert(item: $externalAudioOpenAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("ok"))
+                )
+            }
     }
     #else
     @ViewBuilder private var macPlatformRootContent: some View {
@@ -1560,6 +1742,188 @@ struct PrimuseApp: App {
                 : nil
         )
     }
+
+    #if os(iOS)
+    @MainActor
+    private func ensureManagedLocalSourceForExternalOpen() async throws -> MusicSource {
+        let sourceID = LocalImportService.sourceID
+        let existing = sourcesStore.source(id: sourceID)
+        switch ExternalAudioDocumentPolicy.managedSourceDisposition(
+            exists: existing != nil,
+            isDeleted: existing?.isDeleted ?? false,
+            isEnabled: existing?.isEnabled ?? true
+        ) {
+        case .create, .restore:
+            let created = LocalImportService.makeSource(
+                name: String(localized: "local_import_source_name")
+            )
+            try sourcesStore.addDurably(created)
+            // A restored source may still have a connector cached under the
+            // same stable source ID. Force replacement before any cast path
+            // can resolve the Song through SourceManager.
+            await sourceManager.refreshConnector(for: created.id, force: true)
+            return sourcesStore.source(id: created.id) ?? created
+        case .reuse:
+            guard let existing else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            let repaired = ExternalAudioDocumentPolicy.repairedManagedSource(existing)
+            if repaired.basePath != existing.basePath {
+                // Repair the sandbox UUID before playback. This is required
+                // before DLNA/casting, which resolves the Song again through
+                // SourceManager instead of consuming the direct managed URL.
+                // Deliberately preserve isEnabled and every other user setting.
+                try sourcesStore.updateDurably(existing.id) {
+                    $0.basePath = repaired.basePath
+                }
+                // SourceManager caches connectors. Updating the store alone is
+                // not enough for DLNA/casting because castSong resolves the
+                // Song through that cache instead of using managedURL.
+                await sourceManager.refreshConnector(for: existing.id, force: true)
+                return sourcesStore.source(id: existing.id) ?? repaired
+            }
+            return existing
+        }
+    }
+
+    @MainActor
+    private func openExternalAudioDocument(_ url: URL, requestID: UUID) async {
+        defer { externalAudioOpenRequestState.finish(requestID) }
+        guard ExternalAudioDocumentPolicy.canOpen(url),
+              externalAudioOpenRequestState.isCurrent(requestID),
+              !Task.isCancelled else { return }
+
+        await musicLibrary.whenReady()
+        guard externalAudioOpenRequestState.isCurrent(requestID),
+              !Task.isCancelled else { return }
+
+        let session = LocalImportService.copySession(
+            [url],
+            cleanupPickedCopies: false
+        )
+        var finalResult: LocalImportService.CopyResult?
+        await withTaskCancellationHandler {
+            for await event in session.events {
+                if case .finished(let result) = event {
+                    finalResult = result
+                }
+            }
+        } onCancel: {
+            session.cancel()
+        }
+
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID),
+              let result = finalResult,
+              !result.cancelled else {
+            return
+        }
+
+        guard let managedName = result.resolvedManagedFileNames.last,
+              let managedURL = ExternalAudioDocumentPolicy.managedFileURL(
+                  fileName: managedName
+              ),
+              ExternalAudioDocumentPolicy.isSafeManagedFile(managedURL) else {
+            externalAudioOpenAlert =
+                ExternalAudioDocumentPolicy.importFailureAlert(for: result)
+                ?? ExternalAudioOpenAlert(
+                    title: String(localized: "local_import_err_title"),
+                    message: String(localized: "local_import_reason_copy")
+                )
+            return
+        }
+
+        let source: MusicSource
+        do {
+            source = try await ensureManagedLocalSourceForExternalOpen()
+        } catch {
+            plog("⚠️ OpenWith: unable to persist managed source — \(error.localizedDescription)")
+            return
+        }
+
+        let relativePath = ExternalAudioDocumentPolicy.managedRelativePath(
+            for: managedURL
+        )
+        guard !relativePath.isEmpty,
+              let format = AudioFormat.from(
+                  fileExtension: managedURL.pathExtension.lowercased()
+              ) else {
+            return
+        }
+
+        let metadata = await FileMetadataReader.read(from: managedURL)
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        let values = try? managedURL.resourceValues(
+            forKeys: [.fileSizeKey, .contentModificationDateKey]
+        )
+        let fallbackTitle = (managedURL.deletingPathExtension().lastPathComponent as NSString)
+            .lastPathComponent
+        let songID = LocalFileSource.songID(
+            sourceID: source.id,
+            path: relativePath
+        )
+        var coverArtFileName: String?
+        if let coverData = metadata.coverArtData, !coverData.isEmpty {
+            coverArtFileName = await MetadataAssetStore.shared.storeCover(
+                coverData,
+                for: songID
+            )
+        }
+
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        let song = Song(
+            id: songID,
+            title: metadata.title ?? fallbackTitle,
+            albumTitle: metadata.albumTitle,
+            artistName: metadata.artist,
+            sourceArtistNames: metadata.sourceArtistNames,
+            albumArtistName: metadata.albumArtist,
+            trackNumber: metadata.trackNumber,
+            discNumber: metadata.discNumber,
+            duration: metadata.duration ?? 0,
+            fileFormat: format,
+            filePath: relativePath,
+            sourceID: source.id,
+            fileSize: Int64(values?.fileSize ?? 0),
+            bitRate: metadata.bitRate,
+            sampleRate: metadata.sampleRate,
+            bitDepth: metadata.bitDepth,
+            genre: metadata.genre,
+            year: metadata.year,
+            lastModified: values?.contentModificationDate,
+            coverArtFileName: coverArtFileName,
+            replayGainTrackGain: metadata.replayGainTrackGain,
+            replayGainTrackPeak: metadata.replayGainTrackPeak,
+            replayGainAlbumGain: metadata.replayGainAlbumGain,
+            replayGainAlbumPeak: metadata.replayGainAlbumPeak,
+            lyricsText: metadata.lyricsText
+        )
+
+        playerService.shuffleEnabled = false
+        playerService.setQueue([song])
+        await playerService.play(
+            song: song,
+            from: managedURL,
+            shouldRecordPlaybackStart: true
+        )
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        NotificationCenter.default.post(
+            name: .primuseRequestShowNowPlaying,
+            object: nil
+        )
+
+        // Import already wrote the durable pending-scan marker. Reuse the
+        // established recovery path instead of waiting for every active scan in
+        // the application. A disabled managed source stays disabled by design.
+        AppServices.shared.resumePendingLocalImportScanIfNeeded()
+    }
+    #endif
 
     var body: some Scene {
         macAwareMainGroup {
@@ -1819,6 +2183,23 @@ struct PrimuseApp: App {
                 }
                 .onOpenURL { url in
                     plog("🔗 onOpenURL: scheme=\(url.scheme ?? "?") host=\(url.host ?? "?")")
+                    #if os(iOS)
+                    if url.isFileURL {
+                        guard ExternalAudioDocumentPolicy.canOpen(url) else {
+                            plog("⚠️ OpenWith: unsupported document \(url.lastPathComponent)")
+                            return
+                        }
+                        externalAudioOpenTask?.cancel()
+                        let requestID = externalAudioOpenRequestState.begin()
+                        externalAudioOpenTask = Task { @MainActor in
+                            await openExternalAudioDocument(
+                                url,
+                                requestID: requestID
+                            )
+                        }
+                        return
+                    }
+                    #endif
                     if let request = MediaRelayImportRequest(url: url) {
                         mediaRelayImportRequest = request
                         return
