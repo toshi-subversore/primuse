@@ -249,6 +249,9 @@ enum LocalImportService {
         var discovered = 0
         var cancelled = false
         var failures: [CopyFailure] = []
+        /// Managed file names corresponding to successfully handled inputs.
+        /// Content duplicates resolve to the existing managed copy.
+        var resolvedManagedFileNames: [String] = []
 
         var skipped: Int { duplicateSkipped + failed }
     }
@@ -347,6 +350,9 @@ enum LocalImportService {
             guard !pending.isEmpty else { return }
             do {
                 try identity.recordBatch(pending.map(\.identityEntry))
+                result.resolvedManagedFileNames.append(
+                    contentsOf: pending.map { $0.audio.url.lastPathComponent }
+                )
                 result.copied += pending.count
             } catch {
                 for item in pending.reversed() {
@@ -614,10 +620,11 @@ enum LocalImportService {
             return
         }
 
-        if pending.contains(where: { $0.audio.sha256 == staged.sha256 }) {
+        if let duplicate = pending.first(where: { $0.audio.sha256 == staged.sha256 }) {
             transaction.discard(staged)
             processed += 1
             result.duplicateSkipped += 1
+            result.resolvedManagedFileNames.append(duplicate.audio.url.lastPathComponent)
             progress?(progressSnapshot(
                 .committing,
                 fileName: fileName,
@@ -636,6 +643,9 @@ enum LocalImportService {
                     transaction.discard(staged)
                     processed += 1
                     result.duplicateSkipped += 1
+                    result.resolvedManagedFileNames.append(
+                        URL(fileURLWithPath: existing.relativePath).lastPathComponent
+                    )
                     progress?(progressSnapshot(
                         .committing,
                         fileName: fileName,
