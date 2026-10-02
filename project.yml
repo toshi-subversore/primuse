@@ -228,6 +228,14 @@ targets:
         LSApplicationCategoryType: "public.app-category.music"
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        # Register Primuse as an alternate viewer for audio documents so iOS/iPadOS
+        # can offer it in Files → Open With / Always Open With.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "Audio"
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - primuse
