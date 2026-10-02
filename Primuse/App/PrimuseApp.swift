@@ -1319,6 +1319,73 @@ private struct SourceAuthenticationPresentationModifier: ViewModifier {
     }
 }
 
+#if os(iOS)
+enum ExternalAudioDocumentPolicy {
+    enum ManagedSourceDisposition: Equatable {
+        case reuse
+        case restore
+        case create
+    }
+
+    static func canOpen(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        return PrimuseConstants.supportedAudioExtensions.contains(
+            url.pathExtension.lowercased()
+        )
+    }
+
+    static func managedFileURL(fileName: String) -> URL? {
+        guard !fileName.isEmpty,
+              fileName != ".",
+              fileName != "..",
+              !fileName.contains("/"),
+              !fileName.contains("\\"),
+              fileName.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = root.appendingPathComponent(fileName).standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root else { return nil }
+        return candidate
+    }
+
+    static func managedRelativePath(for url: URL) -> String {
+        let root = LocalImportService.musicDirectory.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.deletingLastPathComponent() == root else { return "" }
+        return "/" + candidate.lastPathComponent
+    }
+
+    static func managedSourceDisposition(
+        exists: Bool,
+        isDeleted: Bool,
+        isEnabled: Bool
+    ) -> ManagedSourceDisposition {
+        _ = isEnabled
+        guard exists else { return .create }
+        return isDeleted ? .restore : .reuse
+    }
+}
+
+struct ExternalAudioOpenRequestState {
+    private var currentID: UUID?
+
+    mutating func begin() -> UUID {
+        let id = UUID()
+        currentID = id
+        return id
+    }
+
+    func isCurrent(_ id: UUID) -> Bool {
+        currentID == id
+    }
+
+    mutating func finish(_ id: UUID) {
+        if currentID == id { currentID = nil }
+    }
+}
+#endif
+
 @main
 struct PrimuseApp: App {
     #if os(iOS)
@@ -1377,6 +1444,10 @@ struct PrimuseApp: App {
     #endif
     /// 分享页签发的一次性导入凭证，仅在本地内存中保留。
     @State private var mediaRelayImportRequest: MediaRelayImportRequest?
+    #if os(iOS)
+    @State private var externalAudioOpenRequestState = ExternalAudioOpenRequestState()
+    @State private var externalAudioOpenTask: Task<Void, Never>?
+    #endif
 
     init() {
         // 资料库分类有了默认收起的几类:升级前的显隐存档先在这里写实,界面读到的就是对的。
@@ -1560,6 +1631,161 @@ struct PrimuseApp: App {
                 : nil
         )
     }
+
+    #if os(iOS)
+    @MainActor
+    private func ensureManagedLocalSourceForExternalOpen() throws -> MusicSource {
+        let sourceID = LocalImportService.sourceID
+        let existing = sourcesStore.source(id: sourceID)
+        switch ExternalAudioDocumentPolicy.managedSourceDisposition(
+            exists: existing != nil,
+            isDeleted: existing?.isDeleted ?? false,
+            isEnabled: existing?.isEnabled ?? true
+        ) {
+        case .create, .restore:
+            let created = LocalImportService.makeSource(
+                name: String(localized: "local_import_source_name")
+            )
+            try sourcesStore.addDurably(created)
+            return created
+        case .reuse:
+            guard let existing else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            if existing.basePath != LocalImportService.musicDirectory.path {
+                try sourcesStore.updateDurably(existing.id) {
+                    $0.basePath = LocalImportService.musicDirectory.path
+                }
+            }
+            return sourcesStore.source(id: existing.id) ?? existing
+        }
+    }
+
+    @MainActor
+    private func openExternalAudioDocument(_ url: URL, requestID: UUID) async {
+        defer { externalAudioOpenRequestState.finish(requestID) }
+        guard ExternalAudioDocumentPolicy.canOpen(url),
+              externalAudioOpenRequestState.isCurrent(requestID),
+              !Task.isCancelled else { return }
+
+        await musicLibrary.whenReady()
+        guard externalAudioOpenRequestState.isCurrent(requestID),
+              !Task.isCancelled else { return }
+
+        let session = LocalImportService.copySession(
+            [url],
+            cleanupPickedCopies: false
+        )
+        var finalResult: LocalImportService.CopyResult?
+        for await event in session.events {
+            if case .finished(let result) = event {
+                finalResult = result
+            }
+            if Task.isCancelled { session.cancel() }
+        }
+
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID),
+              let result = finalResult,
+              !result.cancelled,
+              let managedName = result.resolvedManagedFileNames.last,
+              let managedURL = ExternalAudioDocumentPolicy.managedFileURL(
+                  fileName: managedName
+              ),
+              FileManager.default.fileExists(atPath: managedURL.path) else {
+            return
+        }
+
+        let source: MusicSource
+        do {
+            source = try ensureManagedLocalSourceForExternalOpen()
+        } catch {
+            plog("⚠️ OpenWith: unable to persist managed source — \(error.localizedDescription)")
+            return
+        }
+
+        let relativePath = ExternalAudioDocumentPolicy.managedRelativePath(
+            for: managedURL
+        )
+        guard !relativePath.isEmpty,
+              let format = AudioFormat.from(
+                  fileExtension: managedURL.pathExtension.lowercased()
+              ) else {
+            return
+        }
+
+        let metadata = await FileMetadataReader.read(from: managedURL)
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        let values = try? managedURL.resourceValues(
+            forKeys: [.fileSizeKey, .contentModificationDateKey]
+        )
+        let fallbackTitle = (managedURL.deletingPathExtension().lastPathComponent as NSString)
+            .lastPathComponent
+        let songID = LocalFileSource.songID(
+            sourceID: source.id,
+            path: relativePath
+        )
+        var coverArtFileName: String?
+        if let coverData = metadata.coverArtData, !coverData.isEmpty {
+            coverArtFileName = await MetadataAssetStore.shared.storeCover(
+                coverData,
+                for: songID
+            )
+        }
+
+        guard !Task.isCancelled,
+              externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        let song = Song(
+            id: songID,
+            title: metadata.title ?? fallbackTitle,
+            albumTitle: metadata.albumTitle,
+            artistName: metadata.artist,
+            sourceArtistNames: metadata.sourceArtistNames,
+            albumArtistName: metadata.albumArtist,
+            trackNumber: metadata.trackNumber,
+            discNumber: metadata.discNumber,
+            duration: metadata.duration ?? 0,
+            fileFormat: format,
+            filePath: relativePath,
+            sourceID: source.id,
+            fileSize: Int64(values?.fileSize ?? 0),
+            bitRate: metadata.bitRate,
+            sampleRate: metadata.sampleRate,
+            bitDepth: metadata.bitDepth,
+            genre: metadata.genre,
+            year: metadata.year,
+            lastModified: values?.contentModificationDate,
+            coverArtFileName: coverArtFileName,
+            replayGainTrackGain: metadata.replayGainTrackGain,
+            replayGainTrackPeak: metadata.replayGainTrackPeak,
+            replayGainAlbumGain: metadata.replayGainAlbumGain,
+            replayGainAlbumPeak: metadata.replayGainAlbumPeak,
+            lyricsText: metadata.lyricsText
+        )
+
+        playerService.shuffleEnabled = false
+        playerService.setQueue([song])
+        await playerService.play(
+            song: song,
+            from: managedURL,
+            shouldRecordPlaybackStart: true
+        )
+        guard externalAudioOpenRequestState.isCurrent(requestID) else { return }
+
+        NotificationCenter.default.post(
+            name: .primuseRequestShowNowPlaying,
+            object: nil
+        )
+
+        // Import already wrote the durable pending-scan marker. Reuse the
+        // established recovery path instead of waiting for every active scan in
+        // the application. A disabled managed source stays disabled by design.
+        AppServices.shared.resumePendingLocalImportScanIfNeeded()
+    }
+    #endif
 
     var body: some Scene {
         macAwareMainGroup {
@@ -1819,6 +2045,23 @@ struct PrimuseApp: App {
                 }
                 .onOpenURL { url in
                     plog("🔗 onOpenURL: scheme=\(url.scheme ?? "?") host=\(url.host ?? "?")")
+                    #if os(iOS)
+                    if url.isFileURL {
+                        guard ExternalAudioDocumentPolicy.canOpen(url) else {
+                            plog("⚠️ OpenWith: unsupported document \(url.lastPathComponent)")
+                            return
+                        }
+                        externalAudioOpenTask?.cancel()
+                        let requestID = externalAudioOpenRequestState.begin()
+                        externalAudioOpenTask = Task { @MainActor in
+                            await openExternalAudioDocument(
+                                url,
+                                requestID: requestID
+                            )
+                        }
+                        return
+                    }
+                    #endif
                     if let request = MediaRelayImportRequest(url: url) {
                         mediaRelayImportRequest = request
                         return
