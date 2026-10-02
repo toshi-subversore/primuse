@@ -1263,6 +1263,11 @@ actor LocalFileSource: ExistingSongAwareScanningConnector, EmbeddedMetadataWrite
         return candidate
     }
 
+    /// Stable identity shared by scanning and direct document playback.
+    nonisolated static func songID(sourceID: String, path: String) -> String {
+        generateID(sourceID: sourceID, path: path)
+    }
+
     private nonisolated static func generateID(sourceID: String, path: String) -> String {
         let input = "\(sourceID):\(path)"
         let hash = SHA256.hash(data: Data(input.utf8))

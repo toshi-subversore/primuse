@@ -228,6 +228,12 @@ targets:
         LSApplicationCategoryType: "public.app-category.music"
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "Audio"
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - primuse
