@@ -1745,7 +1745,7 @@ struct PrimuseApp: App {
 
     #if os(iOS)
     @MainActor
-    private func ensureManagedLocalSourceForExternalOpen() throws -> MusicSource {
+    private func ensureManagedLocalSourceForExternalOpen() async throws -> MusicSource {
         let sourceID = LocalImportService.sourceID
         let existing = sourcesStore.source(id: sourceID)
         switch ExternalAudioDocumentPolicy.managedSourceDisposition(
@@ -1758,7 +1758,11 @@ struct PrimuseApp: App {
                 name: String(localized: "local_import_source_name")
             )
             try sourcesStore.addDurably(created)
-            return created
+            // A restored source may still have a connector cached under the
+            // same stable source ID. Force replacement before any cast path
+            // can resolve the Song through SourceManager.
+            await sourceManager.refreshConnector(for: created.id, force: true)
+            return sourcesStore.source(id: created.id) ?? created
         case .reuse:
             guard let existing else {
                 throw CocoaError(.fileNoSuchFile)
@@ -1772,6 +1776,10 @@ struct PrimuseApp: App {
                 try sourcesStore.updateDurably(existing.id) {
                     $0.basePath = repaired.basePath
                 }
+                // SourceManager caches connectors. Updating the store alone is
+                // not enough for DLNA/casting because castSong resolves the
+                // Song through that cache instead of using managedURL.
+                await sourceManager.refreshConnector(for: existing.id, force: true)
                 return sourcesStore.source(id: existing.id) ?? repaired
             }
             return existing
@@ -1827,7 +1835,7 @@ struct PrimuseApp: App {
 
         let source: MusicSource
         do {
-            source = try ensureManagedLocalSourceForExternalOpen()
+            source = try await ensureManagedLocalSourceForExternalOpen()
         } catch {
             plog("⚠️ OpenWith: unable to persist managed source — \(error.localizedDescription)")
             return
