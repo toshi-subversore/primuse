@@ -1,3 +1,5 @@
+<p align="right"><a href="DEPLOYMENT.md">Original</a> · <strong>Português (Brasil)</strong></p>
+
 # Guia de implantação do Primuse Share Relay
 
 Este diretório oferece duas formas de implantação compatíveis com a API de media relay do Primuse:
