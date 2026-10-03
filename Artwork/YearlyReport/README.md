@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 # 年度报告插画
 
 这组插画暂时不随安装包下发（3x 机型上约 27.5 MB）。找不到图片时，年度报告的每张卡片会用 SF Symbol 兜底（见 `YearlyArtView`）。

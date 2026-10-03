@@ -1,3 +1,5 @@
+<p align="right"><strong>Original</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 # FFmpeg audio runtime
 
 Primuse uses the dynamic FFmpeg libraries `libavformat`, `libavcodec`,
